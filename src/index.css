@@ -1,0 +1,5 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+body { @apply bg-paper text-ink font-sans antialiased; }
+:focus-visible { outline: 3px solid #F28C28; outline-offset: 2px; }
