@@ -3,13 +3,14 @@ import { AnimatePresence, LazyMotion, MotionConfig, domAnimation, m } from 'fram
 import { HashRouter, Link, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import type { ServiceId } from './types'
 import { localized, tr } from './i18n'
-import { detect, services, sample } from './data'
+import { detect, services } from './data'
 import { AppProvider, useApp } from './state/AppContext'
 import Navbar from './components/Navbar'
 import Hero from './components/Hero'
 import ServiceGrid from './components/ServiceGrid'
 import HowItWorks from './components/HowItWorks'
 import NextStep from './components/NextStep'
+import ChatWorkspace, { type ChatMessage, type ChatSession } from './components/ChatWorkspace'
 import AnalysisLoader from './components/AnalysisLoader'
 import Footer from './components/Footer'
 import Modal from './components/Modal'
@@ -21,13 +22,31 @@ const ActionPlan = lazy(() => import('./components/ActionPlan'))
 const Dashboard = lazy(() => import('./components/Dashboard'))
 const Skeleton = () => <div className="mx-auto my-12 max-w-4xl animate-pulse rounded-md border border-stone-200 bg-white p-8" aria-label="Loading"><div className="h-6 w-1/3 rounded bg-stone-200" /><div className="mt-5 h-28 rounded bg-stone-100" /></div>
 
+function isChatMessage(value: unknown): value is ChatMessage {
+  if (!value || typeof value !== 'object') return false
+  const message = value as Record<string, unknown>
+  return typeof message.id === 'string' && (message.role === 'user' || message.role === 'assistant') && typeof message.text === 'string'
+}
+function isChatSession(value: unknown): value is ChatSession {
+  if (!value || typeof value !== 'object') return false
+  const session = value as Record<string, unknown>
+  return typeof session.id === 'string' && typeof session.title === 'string' && typeof session.updatedAt === 'number' && Array.isArray(session.messages) && session.messages.every(isChatMessage)
+}
+function restoreChats(): ChatSession[] {
+  try {
+    const saved: unknown = JSON.parse(localStorage.getItem('lifeos:chats:v1') ?? 'null')
+    return Array.isArray(saved) ? saved.filter(isChatSession) : []
+  } catch { return [] }
+}
+
 function Home({ onAnalyze }: { onAnalyze: (query: string) => void }) {
   const { my, tasks } = useApp()
   const navigate = useNavigate()
   const progress = (id: ServiceId) => Math.round(tasks[id].filter((task) => task.done).length / tasks[id].length * 100)
   return <>
     <Hero onAnalyze={onAnalyze} />
-    <ServiceGrid onExplore={onAnalyze} /><HowItWorks />
+    <ServiceGrid onExplore={onAnalyze} />
+    <HowItWorks />
     <NextStep my={my} tasks={tasks} progress={progress} onContinue={(id) => navigate(`/plan/${id}`)} />
   </>
 }
@@ -68,10 +87,53 @@ function RoutedApp() {
   const [query, setQuery] = useState('')
   const [pendingId, setPendingId] = useState<ServiceId | null>(null)
   const [official, setOfficial] = useState(false)
+  const [chats, setChats] = useState<ChatSession[]>(restoreChats)
+  const [activeChatId, setActiveChatId] = useState<string | null>(null)
   const activeId = location.pathname.match(/^\/result\/([^/]+)/)?.[1] ?? location.pathname.match(/^\/plan\/([^/]+)/)?.[1]
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current) }, [])
   useEffect(() => { if (location.pathname !== '/analyzing' && timer.current) { clearTimeout(timer.current); timer.current = null } }, [location.pathname])
-  const analyze = (value: string) => { const trimmed = value.trim(); if (!trimmed) return; const id = detect(trimmed); setQuery(trimmed); setPendingId(id); navigate('/analyzing') }
+  const createChat = (firstMessage?: string) => {
+    const id = crypto.randomUUID()
+    const now = Date.now()
+    const text = firstMessage?.trim() ?? ''
+    const assistant: ChatMessage = { id: crypto.randomUUID(), role: 'assistant', text: localized(app.lang).chatReply }
+    const messages: ChatMessage[] = text ? [{ id: crypto.randomUUID(), role: 'user', text }, assistant] : []
+    const session: ChatSession = { id, title: text ? text.slice(0, 42) : localized(app.lang).newChat, updatedAt: now, messages }
+    setChats((previous) => [session, ...previous])
+    setActiveChatId(id)
+    navigate('/chat')
+  }
+  const sendChatMessage = (value: string) => {
+    const text = value.trim()
+    if (!text) return
+    if (!activeChatId) { createChat(text); return }
+    const now = Date.now()
+    const userMessage: ChatMessage = { id: crypto.randomUUID(), role: 'user', text }
+    const assistantMessage: ChatMessage = { id: crypto.randomUUID(), role: 'assistant', text: localized(app.lang).chatReply }
+    setChats((previous) => previous.map((chat) => chat.id === activeChatId ? {
+      ...chat,
+      title: chat.messages.length === 0 ? text.slice(0, 42) : chat.title,
+      updatedAt: now,
+      messages: [...chat.messages, userMessage, assistantMessage],
+    } : chat))
+  }
+  const continueChat = () => {
+    const active = chats.find((chat) => chat.id === activeChatId)
+    const userMessages = active?.messages.filter((message) => message.role === 'user') ?? []
+    const lastQuery = userMessages[userMessages.length - 1]?.text
+    if (!lastQuery) return
+    setQuery(lastQuery)
+    setPendingId(detect(lastQuery))
+    navigate('/analyzing')
+  }
+  useEffect(() => { try { localStorage.setItem('lifeos:chats:v1', JSON.stringify(chats)) } catch { /* storage can be unavailable */ } }, [chats])
+  useEffect(() => {
+    if (location.pathname === '/chat' && !activeChatId) {
+      const mostRecent = chats[0]
+      if (mostRecent) setActiveChatId(mostRecent.id)
+      else createChat()
+    }
+  }, [location.pathname, activeChatId, chats])
   useEffect(() => {
     if (location.pathname !== '/analyzing') return
     timer.current = setTimeout(() => { navigate(pendingId ? `/result/${pendingId}` : '/not-found', { replace: true }); timer.current = null }, 2000)
@@ -83,7 +145,8 @@ function RoutedApp() {
     <Navbar t={localized(app.lang)} lang={app.lang} setLang={app.setLang} />
     <AnimatePresence mode="wait"><m.main id="main-content" key={location.pathname} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.25 }}>
       <ErrorBoundary><Suspense fallback={<Skeleton />}><Routes location={location}>
-        <Route path="/" element={<Home onAnalyze={analyze} />} />
+        <Route path="/" element={<Home onAnalyze={(value) => createChat(value)} />} />
+        <Route path="/chat" element={<ChatWorkspace sessions={chats} activeId={activeChatId ?? ''} onSelect={setActiveChatId} onNewChat={() => createChat()} onSend={sendChatMessage} onContinue={continueChat} />} />
         <Route path="/analyzing" element={<AnalysisLoader query={query} />} />
         <Route path="/result/:serviceId" element={<ResultRoute onOfficial={() => setOfficial(true)} />} />
         <Route path="/plan/:serviceId" element={<PlanRoute />} />
@@ -93,7 +156,7 @@ function RoutedApp() {
         <Route path="*" element={<NotFound />} />
       </Routes></Suspense></ErrorBoundary>
     </m.main></AnimatePresence>
-    <Footer />
+    {location.pathname !== '/chat' && <Footer />}
     <Modal open={official} onClose={() => setOfficial(false)}><h3 className="mb-2 text-lg font-bold">Official service link</h3><p className="mb-4">You are leaving the LifeOS prototype. This opens an official government website in a new tab.</p><a className={btnClass()} href={activeId && services[activeId as ServiceId] ? services[activeId as ServiceId].officialUrl : '#'} target="_blank" rel="noopener noreferrer">Open official website <ExternalLink size={16} /></a></Modal>
   </div></LazyMotion></MotionConfig>
 }

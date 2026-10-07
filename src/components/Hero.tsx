@@ -1,39 +1,35 @@
 import { m } from 'framer-motion'
-import { ArrowRight } from 'lucide-react'
 import { localized } from '../i18n'
 import { useApp } from '../state/AppContext'
-import { chips, sample, services } from '../data'
-import { icons } from './icons'
+import { sample } from '../data'
 import ChatInput from './ChatInput'
-import type { ServiceId } from '../types'
 
 interface Props { onAnalyze: (q: string) => void }
+
 export default function Hero({ onAnalyze }: Props) {
   const { lang } = useApp()
   const t = localized(lang)
+  const suggestions = [
+    { label: t.exampleElectricity, query: sample.elec },
+    { label: t.exampleLicence, query: sample.dl },
+    { label: t.examplePan, query: sample.pan },
+  ]
+
   return (
-    <section className="bg-saf text-navy">
-      <div className="mx-auto grid max-w-6xl items-center gap-10 px-5 py-14 lg:grid-cols-[1.25fr_1fr]">
-        <m.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
-          <p className="text-xs font-bold uppercase tracking-widest opacity-90">{t.badge}</p>
-          <h1 className="my-3 text-3xl font-extrabold leading-tight sm:text-5xl">{t.h1}</h1>
-          <p className="mb-6 max-w-xl opacity-95">{t.sub}</p>
-          <ChatInput onSend={onAnalyze} suggestions={chips} />
-        </m.div>
-        <div className="hidden gap-3 lg:grid">
-          {(['elec', 'dl', 'pan'] as ServiceId[]).map((id, i) => {
-            const s = services[id], Icon = icons[s.icon]
-            return (
-              <m.button key={id} initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.2 + i * 0.12 }} whileHover={{ x: -4 }}
-                onClick={() => onAnalyze(sample[id])} className="flex items-center gap-4 rounded-md bg-white p-4 text-left text-ink shadow-[0_2px_0_rgba(0,0,0,.2)]">
-                <span className="grid h-11 w-11 place-items-center rounded bg-navy/10 text-navy"><Icon size={22} /></span>
-                <span><b className="block">{s.title}</b><small className="text-stone-500">{s.time}</small></span>
-                <ArrowRight size={18} className="ml-auto text-burnt" />
-              </m.button>
-            )
-          })}
+    <section className="flex min-h-[calc(100svh-4.25rem)] items-center justify-center bg-paper px-4 py-12 text-navy sm:px-6">
+      <m.div
+        initial={{ opacity: 0, y: 14 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: 'easeOut' }}
+        className="w-full max-w-3xl text-center"
+      >
+        <p className="text-xs font-bold uppercase tracking-[0.16em] text-burnt sm:text-sm">{t.badge}</p>
+        <h1 className="mx-auto my-4 max-w-2xl text-3xl font-extrabold leading-tight sm:text-5xl">{t.h1}</h1>
+        <p className="mx-auto mb-8 max-w-xl text-base leading-relaxed text-stone-600 sm:text-lg">{t.sub}</p>
+        <div className="mx-auto w-full max-w-3xl text-left">
+          <ChatInput onSend={onAnalyze} suggestions={suggestions} />
         </div>
-      </div>
+      </m.div>
     </section>
   )
 }
