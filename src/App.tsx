@@ -4,6 +4,7 @@ import { HashRouter, Link, Route, Routes, useLocation, useNavigate, useParams } 
 import type { ServiceId } from './types'
 import { localized, tr } from './i18n'
 import { detect, services } from './data'
+import { sendChatMessage as sendToAi } from './api'
 import { AppProvider, useApp } from './state/AppContext'
 import Navbar from './components/Navbar'
 import Hero from './components/Hero'
@@ -30,7 +31,7 @@ function isChatMessage(value: unknown): value is ChatMessage {
 function isChatSession(value: unknown): value is ChatSession {
   if (!value || typeof value !== 'object') return false
   const session = value as Record<string, unknown>
-  return typeof session.id === 'string' && typeof session.title === 'string' && typeof session.updatedAt === 'number' && Array.isArray(session.messages) && session.messages.every(isChatMessage)
+  return typeof session.id === 'string' && typeof session.title === 'string' && typeof session.updatedAt === 'number' && Array.isArray(session.messages) && session.messages.every(isChatMessage) && (session.interactionId === undefined || session.interactionId === null || typeof session.interactionId === 'string')
 }
 function restoreChats(): ChatSession[] {
   try {
@@ -89,33 +90,64 @@ function RoutedApp() {
   const [official, setOfficial] = useState(false)
   const [chats, setChats] = useState<ChatSession[]>(restoreChats)
   const [activeChatId, setActiveChatId] = useState<string | null>(null)
+  const [pendingChatId, setPendingChatId] = useState<string | null>(null)
+  const [errorChatId, setErrorChatId] = useState<string | null>(null)
   const activeId = location.pathname.match(/^\/result\/([^/]+)/)?.[1] ?? location.pathname.match(/^\/plan\/([^/]+)/)?.[1]
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current) }, [])
   useEffect(() => { if (location.pathname !== '/analyzing' && timer.current) { clearTimeout(timer.current); timer.current = null } }, [location.pathname])
+  const requestChatResponse = async (chatId: string, message: string, previousInteractionId: string | null) => {
+    setPendingChatId(chatId)
+    setErrorChatId(null)
+    try {
+      const result = await sendToAi(message, previousInteractionId)
+      const reply: ChatMessage = { id: crypto.randomUUID(), role: 'assistant', text: result.message }
+      setChats((previous) => previous.map((chat) => chat.id === chatId ? {
+        ...chat,
+        updatedAt: Date.now(),
+        interactionId: result.interaction_id,
+        messages: [...chat.messages, reply],
+      } : chat))
+    } catch (error) {
+      console.error('LifeOS AI request failed', error)
+      setErrorChatId(chatId)
+    } finally {
+      setPendingChatId((current) => current === chatId ? null : current)
+    }
+  }
   const createChat = (firstMessage?: string) => {
     const id = crypto.randomUUID()
     const now = Date.now()
     const text = firstMessage?.trim() ?? ''
-    const assistant: ChatMessage = { id: crypto.randomUUID(), role: 'assistant', text: localized(app.lang).chatReply }
-    const messages: ChatMessage[] = text ? [{ id: crypto.randomUUID(), role: 'user', text }, assistant] : []
-    const session: ChatSession = { id, title: text ? text.slice(0, 42) : localized(app.lang).newChat, updatedAt: now, messages }
+    const messages: ChatMessage[] = text ? [{ id: crypto.randomUUID(), role: 'user', text }] : []
+    const session: ChatSession = { id, title: text ? text.slice(0, 42) : localized(app.lang).newChat, updatedAt: now, messages, interactionId: null }
     setChats((previous) => [session, ...previous])
     setActiveChatId(id)
     navigate('/chat')
+    if (text) void requestChatResponse(id, text, null)
   }
   const sendChatMessage = (value: string) => {
     const text = value.trim()
-    if (!text) return
+    if (!text || pendingChatId) return
     if (!activeChatId) { createChat(text); return }
     const now = Date.now()
     const userMessage: ChatMessage = { id: crypto.randomUUID(), role: 'user', text }
-    const assistantMessage: ChatMessage = { id: crypto.randomUUID(), role: 'assistant', text: localized(app.lang).chatReply }
+    const activeChat = chats.find((chat) => chat.id === activeChatId)
     setChats((previous) => previous.map((chat) => chat.id === activeChatId ? {
       ...chat,
       title: chat.messages.length === 0 ? text.slice(0, 42) : chat.title,
       updatedAt: now,
-      messages: [...chat.messages, userMessage, assistantMessage],
+      messages: [...chat.messages, userMessage],
     } : chat))
+    setErrorChatId(null)
+    void requestChatResponse(activeChatId, text, activeChat?.interactionId ?? null)
+  }
+  const retryChat = () => {
+    const activeChat = chats.find((chat) => chat.id === activeChatId)
+    const previousUserMessages = activeChat?.messages.filter((message) => message.role === 'user') ?? []
+    const lastMessage = previousUserMessages[previousUserMessages.length - 1]?.text
+    if (activeChat && lastMessage && !pendingChatId) {
+      void requestChatResponse(activeChat.id, lastMessage, activeChat.interactionId ?? null)
+    }
   }
   const continueChat = () => {
     const active = chats.find((chat) => chat.id === activeChatId)
@@ -146,7 +178,7 @@ function RoutedApp() {
     <AnimatePresence mode="wait"><m.main id="main-content" key={location.pathname} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.25 }}>
       <ErrorBoundary><Suspense fallback={<Skeleton />}><Routes location={location}>
         <Route path="/" element={<Home onAnalyze={(value) => createChat(value)} />} />
-        <Route path="/chat" element={<ChatWorkspace sessions={chats} activeId={activeChatId ?? ''} onSelect={setActiveChatId} onNewChat={() => createChat()} onSend={sendChatMessage} onContinue={continueChat} />} />
+        <Route path="/chat" element={<ChatWorkspace sessions={chats} activeId={activeChatId ?? ''} onSelect={(id) => { setActiveChatId(id); setErrorChatId(null) }} onNewChat={() => createChat()} onSend={sendChatMessage} onContinue={continueChat} onRetry={retryChat} aiLoading={pendingChatId === activeChatId} inputDisabled={pendingChatId !== null} aiError={errorChatId === activeChatId} />} />
         <Route path="/analyzing" element={<AnalysisLoader query={query} />} />
         <Route path="/result/:serviceId" element={<ResultRoute onOfficial={() => setOfficial(true)} />} />
         <Route path="/plan/:serviceId" element={<PlanRoute />} />

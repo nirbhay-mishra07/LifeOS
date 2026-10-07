@@ -1,10 +1,11 @@
 import { ArrowRight, MessageSquarePlus, Sparkles } from 'lucide-react'
 import { localized } from '../i18n'
+import { detect } from '../data'
 import { useApp } from '../state/AppContext'
 import ChatInput from './ChatInput'
 
 export interface ChatMessage { id: string; role: 'user' | 'assistant'; text: string }
-export interface ChatSession { id: string; title: string; updatedAt: number; messages: ChatMessage[] }
+export interface ChatSession { id: string; title: string; updatedAt: number; messages: ChatMessage[]; interactionId?: string | null }
 
 interface Props {
   sessions: ChatSession[]
@@ -13,26 +14,32 @@ interface Props {
   onNewChat: () => void
   onSend: (text: string) => void
   onContinue: () => void
+  onRetry: () => void
+  aiLoading: boolean
+  inputDisabled: boolean
+  aiError: boolean
 }
 
-export default function ChatWorkspace({ sessions, activeId, onSelect, onNewChat, onSend, onContinue }: Props) {
+export default function ChatWorkspace({ sessions, activeId, onSelect, onNewChat, onSend, onContinue, onRetry, aiLoading, inputDisabled, aiError }: Props) {
   const { lang } = useApp()
   const t = localized(lang)
   const active = sessions.find((session) => session.id === activeId)
   const hasUserMessage = active?.messages.some((message) => message.role === 'user') ?? false
+  const latestUserMessage = active?.messages.filter((message) => message.role === 'user').slice(-1)[0]
+  const canContinueToService = Boolean(latestUserMessage && detect(latestUserMessage.text))
 
   return (
     <section className="mx-auto flex min-h-[calc(100svh-4.25rem)] max-w-7xl flex-col px-3 py-3 sm:px-5 sm:py-5">
       <div className="flex min-h-[min(780px,calc(100svh-8rem))] flex-1 flex-col overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm md:flex-row">
         <aside className="flex max-h-44 shrink-0 flex-col border-b border-stone-200 bg-[#fbfaf7] p-3 md:max-h-none md:w-64 md:border-b-0 md:border-r md:p-4">
-          <button type="button" onClick={onNewChat} className="flex shrink-0 items-center justify-center gap-2 rounded-lg bg-navy px-4 py-3 font-bold text-white transition hover:bg-[#0d2c4a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy focus-visible:ring-offset-2">
+          <button type="button" disabled={inputDisabled} onClick={onNewChat} className="flex shrink-0 items-center justify-center gap-2 rounded-lg bg-navy px-4 py-3 font-bold text-white transition hover:bg-[#0d2c4a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60">
             <MessageSquarePlus size={18} aria-hidden="true" />{t.newChat}
           </button>
           <h2 className="mb-2 mt-4 hidden text-xs font-bold uppercase tracking-wider text-stone-500 md:block">{t.chatHistory}</h2>
           <div className="mt-3 flex gap-2 overflow-x-auto md:mt-0 md:flex-1 md:flex-col md:overflow-y-auto md:overflow-x-hidden">
             {sessions.map((session) => (
-              <button key={session.id} type="button" onClick={() => onSelect(session.id)} aria-current={session.id === activeId ? 'page' : undefined}
-                className={`max-w-56 shrink-0 truncate rounded-lg px-3 py-2.5 text-left text-sm transition md:max-w-none ${session.id === activeId ? 'bg-white font-semibold text-navy shadow-sm ring-1 ring-stone-200' : 'text-stone-700 hover:bg-white'}`}>
+              <button key={session.id} type="button" disabled={inputDisabled} onClick={() => onSelect(session.id)} aria-current={session.id === activeId ? 'page' : undefined}
+                className={`max-w-56 shrink-0 truncate rounded-lg px-3 py-2.5 text-left text-sm transition disabled:cursor-not-allowed md:max-w-none ${session.id === activeId ? 'bg-white font-semibold text-navy shadow-sm ring-1 ring-stone-200' : 'text-stone-700 hover:bg-white'}`}>
                 {session.title}
               </button>
             ))}
@@ -55,10 +62,12 @@ export default function ChatWorkspace({ sessions, activeId, onSelect, onNewChat,
                 </div>
               </article>
             )) : <div className="mx-auto mt-8 max-w-md rounded-xl border border-stone-200 bg-white p-5 text-center text-stone-600 shadow-sm"><Sparkles className="mx-auto mb-3 text-burnt" size={22} aria-hidden="true" /><p>{t.chatWelcome}</p></div>}
-            {hasUserMessage && <div className="flex justify-start"><button type="button" onClick={onContinue} className="inline-flex items-center gap-2 rounded-lg border border-navy bg-white px-4 py-2.5 text-sm font-bold text-navy transition hover:bg-navy hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy focus-visible:ring-offset-2">{t.continueGuidance}<ArrowRight size={16} aria-hidden="true" /></button></div>}
+            {aiLoading && <div role="status" className="flex justify-start"><div className="rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-600 shadow-sm"><span className="mr-2 inline-block h-2 w-2 animate-pulse rounded-full bg-burnt" />{t.chatLoading}</div></div>}
+            {aiError && <div role="alert" className="flex flex-wrap items-center gap-3 text-sm text-red-900"><p>{t.aiUnavailable}</p><button type="button" onClick={onRetry} className="rounded border border-red-800 px-3 py-1.5 font-semibold hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-800">{t.retry}</button></div>}
+            {hasUserMessage && canContinueToService && !aiLoading && <div className="flex justify-start"><button type="button" onClick={onContinue} className="inline-flex items-center gap-2 rounded-lg border border-navy bg-white px-4 py-2.5 text-sm font-bold text-navy transition hover:bg-navy hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy focus-visible:ring-offset-2">{t.continueGuidance}<ArrowRight size={16} aria-hidden="true" /></button></div>}
           </div>
           <div className="border-t border-stone-200 bg-white px-4 py-4 sm:px-8 sm:py-5">
-            <ChatInput key={`${activeId}-${active?.messages.length ?? 0}`} onSend={onSend} />
+            <ChatInput key={`${activeId}-${active?.messages.length ?? 0}`} onSend={onSend} disabled={inputDisabled} submitLabel={t.sendChat} />
           </div>
         </div>
       </div>
