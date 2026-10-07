@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://127.0.0.1:8001'
+const API_BASE_URL = 'http://127.0.0.1:8000'
 
 export interface ChatRequest {
   message: string
@@ -7,10 +7,6 @@ export interface ChatRequest {
 
 export interface ChatResponse {
   message: string
-  intent: string
-  service_id: string | null
-  steps: string[]
-  documents: string[]
   interaction_id: string
 }
 
@@ -39,5 +35,10 @@ export async function sendChatMessage(
     )
   }
 
-  return response.json()
+  const data = await response.json()
+
+  return {
+    message: data.response,
+    interaction_id: data.interaction_id,
+  }
 }

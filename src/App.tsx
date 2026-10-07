@@ -60,11 +60,18 @@ const Skeleton = () => (
   </div>
 )
 
+interface ChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
 interface HomeProps {
   onAnalyze: (query: string) => void
   aiLoading: boolean
   aiResponse: string
   aiError: string
+  messages: ChatMessage[]
+  onNewChat: () => void
 }
 
 function Home({
@@ -72,6 +79,8 @@ function Home({
   aiLoading,
   aiResponse,
   aiError,
+  messages,
+  onNewChat,
 }: HomeProps) {
   const { my, tasks } = useApp()
   const navigate = useNavigate()
@@ -90,6 +99,8 @@ function Home({
         aiLoading={aiLoading}
         aiResponse={aiResponse}
         aiError={aiError}
+        messages={messages}
+        onNewChat={onNewChat}
       />
 
       <ServiceGrid onExplore={onAnalyze} />
@@ -271,6 +282,8 @@ function RoutedApp() {
   const [aiLoading, setAiLoading] = useState(false)
   const [aiError, setAiError] = useState('')
 
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+
   useEffect(() => {
     return () => {
       if (timer.current) {
@@ -304,12 +317,17 @@ function RoutedApp() {
     }
 
     setQuery(trimmed)
-
-    // Remove the previous answer while the new
-    // request is being processed.
-    setAiResponse('')
     setAiError('')
+    setAiResponse('')
     setAiLoading(true)
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: 'user',
+        content: trimmed,
+      },
+    ])
 
     try {
       const result = await sendChatMessage(
@@ -317,11 +335,14 @@ function RoutedApp() {
         interactionId
       )
 
-      /*
-       * IMPORTANT:
-       * Set the response BEFORE turning loading off.
-       * This prevents the response from disappearing.
-       */
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: result.message,
+        },
+      ])
+
       setAiResponse(result.message)
       setInteractionId(result.interaction_id)
     } catch (error) {
@@ -331,13 +352,20 @@ function RoutedApp() {
       )
 
       setAiError(
-        'Unable to connect to the LifeOS AI service. Make sure the backend is running on port 8001.'
+        'Unable to connect to the LifeOS AI service. Make sure the backend is running on port 8000.'
       )
     } finally {
       setAiLoading(false)
     }
   }
 
+  const newChat = () => {
+    setMessages([])
+    setInteractionId(null)
+    setAiResponse('')
+    setAiError('')
+    setQuery('')
+  }
   const activeId =
     location.pathname.match(
       /^\/result\/([^/]+)/
@@ -400,7 +428,9 @@ function RoutedApp() {
                           aiLoading={aiLoading}
                           aiResponse={aiResponse}
                           aiError={aiError}
-                        />
+                        messages={messages}
+                        onNewChat={newChat}
+                      />
                       }
                     />
 
@@ -525,3 +555,7 @@ export default function App() {
     </AppProvider>
   )
 }
+
+
+
+
