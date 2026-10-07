@@ -39,6 +39,9 @@ function restoreChats(): ChatSession[] {
     return Array.isArray(saved) ? saved.filter(isChatSession) : []
   } catch { return [] }
 }
+function normalizeQuestion(value: string): string {
+  return value.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
+}
 
 function Home({ onAnalyze }: { onAnalyze: (query: string) => void }) {
   const { my, tasks } = useApp()
@@ -115,9 +118,19 @@ function RoutedApp() {
     }
   }
   const createChat = (firstMessage?: string) => {
+    const text = firstMessage?.trim() ?? ''
+    if (text) {
+      const normalizedText = normalizeQuestion(text)
+      const existing = chats.find((chat) => chat.messages.some((message) => message.role === 'user' && normalizeQuestion(message.text) === normalizedText))
+      if (existing) {
+        setActiveChatId(existing.id)
+        setErrorChatId(null)
+        navigate('/chat')
+        return
+      }
+    }
     const id = crypto.randomUUID()
     const now = Date.now()
-    const text = firstMessage?.trim() ?? ''
     const messages: ChatMessage[] = text ? [{ id: crypto.randomUUID(), role: 'user', text }] : []
     const session: ChatSession = { id, title: text ? text.slice(0, 42) : localized(app.lang).newChat, updatedAt: now, messages, interactionId: null }
     setChats((previous) => [session, ...previous])
