@@ -1,4 +1,5 @@
 import { ArrowRight, MessageSquarePlus, Sparkles } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { localized } from '../i18n'
 import { detect } from '../data'
 import { useApp } from '../state/AppContext'
@@ -6,6 +7,66 @@ import ChatInput from './ChatInput'
 
 export interface ChatMessage { id: string; role: 'user' | 'assistant'; text: string }
 export interface ChatSession { id: string; title: string; updatedAt: number; messages: ChatMessage[]; interactionId?: string | null }
+
+function renderInline(text: string): ReactNode[] {
+  return text.split(/(\*\*[^*]+\*\*|__[^_]+__|\*[^*\n]+\*|_[^_\n]+_)/g).filter(Boolean).map((part, index) => {
+    if ((part.startsWith('**') && part.endsWith('**')) || (part.startsWith('__') && part.endsWith('__'))) {
+      return <strong key={index} className="font-semibold text-navy">{part.slice(2, -2)}</strong>
+    }
+    if ((part.startsWith('*') && part.endsWith('*')) || (part.startsWith('_') && part.endsWith('_'))) {
+      return <em key={index}>{part.slice(1, -1)}</em>
+    }
+    return <span key={index}>{part.replace(/\*/g, '')}</span>
+  })
+}
+
+function renderAssistantText(text: string): ReactNode[] {
+  const blocks: ReactNode[] = []
+  let paragraph: string[] = []
+  let items: string[] = []
+  let listType: 'ul' | 'ol' | null = null
+  const flushParagraph = () => {
+    if (!paragraph.length) return
+    blocks.push(<p key={`p-${blocks.length}`} className="mb-3 last:mb-0">{renderInline(paragraph.join(' '))}</p>)
+    paragraph = []
+  }
+  const flushList = () => {
+    if (!items.length || !listType) return
+    const List = listType
+    blocks.push(<List key={`l-${blocks.length}`} className={`mb-3 space-y-1.5 pl-5 last:mb-0 ${listType === 'ul' ? 'list-disc' : 'list-decimal'}`}>{items.map((item, index) => <li key={index} className="pl-1">{renderInline(item)}</li>)}</List>)
+    items = []
+    listType = null
+  }
+
+  text.replace(/\r/g, '').split('\n').forEach((line) => {
+    const trimmed = line.trim()
+    const unordered = trimmed.match(/^[-*+]\s+(.+)$/)
+    const ordered = trimmed.match(/^\d+[.)]\s+(.+)$/)
+    if (unordered || ordered) {
+      flushParagraph()
+      const nextType = unordered ? 'ul' : 'ol'
+      if (listType && listType !== nextType) flushList()
+      listType = nextType
+      items.push((unordered?.[1] ?? ordered?.[1] ?? '').trim())
+      return
+    }
+    flushList()
+    if (!trimmed) {
+      flushParagraph()
+      return
+    }
+    const heading = trimmed.match(/^#{1,3}\s+(.+)$/)
+    if (heading) {
+      flushParagraph()
+      blocks.push(<h3 key={`h-${blocks.length}`} className="mb-2 mt-1 font-bold text-navy">{renderInline(heading[1])}</h3>)
+      return
+    }
+    paragraph.push(trimmed)
+  })
+  flushParagraph()
+  flushList()
+  return blocks
+}
 
 interface Props {
   sessions: ChatSession[]
@@ -57,7 +118,9 @@ export default function ChatWorkspace({ sessions, activeId, onSelect, onNewChat,
               <article key={message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                 <div className={`max-w-[90%] rounded-xl px-4 py-3 sm:max-w-[78%] ${message.role === 'user' ? 'bg-navy text-white' : 'border border-stone-200 bg-white text-ink shadow-sm'}`}>
                   {message.role === 'assistant' && <p className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-navy"><Sparkles size={14} aria-hidden="true" />{t.aiName}</p>}
-                  <p className="whitespace-pre-wrap text-sm leading-relaxed sm:text-base">{message.text}</p>
+                  {message.role === 'assistant'
+                    ? <div className="text-sm leading-relaxed sm:text-base">{renderAssistantText(message.text)}</div>
+                    : <p className="whitespace-pre-wrap text-sm leading-relaxed sm:text-base">{message.text}</p>}
                   <time className={`mt-2 block text-[11px] ${message.role === 'user' ? 'text-white/70' : 'text-stone-500'}`}>{new Date(active.updatedAt).toLocaleTimeString(lang === 'hi' ? 'hi-IN' : 'en-IN', { hour: 'numeric', minute: '2-digit' })}</time>
                 </div>
               </article>
