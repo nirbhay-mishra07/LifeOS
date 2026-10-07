@@ -12,6 +12,7 @@ import ServiceGrid from './components/ServiceGrid'
 import HowItWorks from './components/HowItWorks'
 import NextStep from './components/NextStep'
 import ChatWorkspace, { type ChatMessage, type ChatSession } from './components/ChatWorkspace'
+import ChatHistoryPage from './components/ChatHistoryPage'
 import AnalysisLoader from './components/AnalysisLoader'
 import Footer from './components/Footer'
 import Modal from './components/Modal'
@@ -192,6 +193,7 @@ function RoutedApp() {
       <ErrorBoundary><Suspense fallback={<Skeleton />}><Routes location={location}>
         <Route path="/" element={<Home onAnalyze={(value) => createChat(value)} />} />
         <Route path="/chat" element={<ChatWorkspace sessions={chats} activeId={activeChatId ?? ''} onSelect={(id) => { setActiveChatId(id); setErrorChatId(null) }} onNewChat={() => createChat()} onSend={sendChatMessage} onContinue={continueChat} onRetry={retryChat} aiLoading={pendingChatId === activeChatId} inputDisabled={pendingChatId !== null} aiError={errorChatId === activeChatId} />} />
+        <Route path="/history" element={<ChatHistoryPage sessions={chats} onOpen={(id) => { setActiveChatId(id); setErrorChatId(null); navigate('/chat') }} onNewChat={() => createChat()} />} />
         <Route path="/analyzing" element={<AnalysisLoader query={query} />} />
         <Route path="/result/:serviceId" element={<ResultRoute onOfficial={() => setOfficial(true)} />} />
         <Route path="/plan/:serviceId" element={<PlanRoute />} />

@@ -12,7 +12,7 @@ export default function Navbar({ t, lang, setLang }: Props) {
   const [menu, setMenu] = useState(false)
   const [notif, setNotif] = useState(false)
   const { notifications, markNotificationsRead } = useApp()
-  const links = [{ label: t.home, to: '/' }, { label: t.services, to: '/dashboard' }, { label: t.track, to: '/dashboard' }, { label: t.help, to: '/help' }]
+  const links = [{ label: t.home, to: '/' }, { label: t.chatHistory, to: '/history' }, { label: t.services, to: '/dashboard' }, { label: t.track, to: '/dashboard' }, { label: t.help, to: '/help' }]
   const activeCount = notifications.filter((n) => !n.read).length
   const navClass = ({ isActive }: { isActive: boolean }) => `px-3 py-2 text-[15px] font-semibold hover:text-navy ${isActive ? 'text-navy shadow-[inset_0_-3px_#F28C28]' : ''}`
   return <header className="sticky top-0 z-40 border-b border-stone-200 bg-white">
